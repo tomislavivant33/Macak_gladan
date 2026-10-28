@@ -116,6 +116,13 @@
 <div id="lost" hidden><div>Veza s poslužiteljem je prekinuta 😿</div><button onclick="location.reload()">Ponovno spoji</button></div>
 
 <script>
+/* ======================================================================
+   ► OVDJE UPIŠI ADRESU SVOG SERVERA (npr. 'https://gladni-macak.onrender.com')
+   Možeš upisati i s https:// i s wss:// — svejedno je.
+   Dok ostane 'OVDJE_UPIŠI_ADRESU', igra će raditi samo na računalu (localhost).
+   ====================================================================== */
+const SERVER_URL = 'OVDJE_UPIŠI_ADRESU';
+
 (() => {
 'use strict';
 
@@ -402,15 +409,22 @@ $('room').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect();
 
 function connect() {
   audio();
-  if (location.protocol === 'file:') {
-    $('startMsg').textContent = 'Igru treba otvoriti preko poslužitelja (npm start → http://localhost:3000).';
-    return;
+  let url = String(SERVER_URL || '').trim();
+  if (!url || url === 'OVDJE_UPIŠI_ADRESU') {
+    if (location.hostname === 'localhost' || location.hostname === '127.0.0.1') {
+      url = (location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host; // lokalno testiranje
+    } else {
+      $('startMsg').textContent = 'Na vrhu datoteke index.html upiši adresu servera u SERVER_URL.';
+      return;
+    }
   }
+  url = url.replace(/^http:\/\//i, 'ws://').replace(/^https:\/\//i, 'wss://');
+  if (!/^wss?:\/\//i.test(url)) url = 'wss://' + url;
   const name = $('name').value.trim() || 'Mačak';
   const room = $('room').value.trim();
   try { localStorage.setItem('gladniMacak', JSON.stringify({ name: $('name').value.trim(), color: selColor, room })); } catch (e) {}
   $('play').disabled = true; $('play').textContent = 'Spajanje…'; $('startMsg').textContent = '';
-  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  try { ws = new WebSocket(url); } catch (e) { fail('Adresa servera nije ispravna: ' + url); return; }
   ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, color: selColor, room }));
   ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } onMsg(m); };
   ws.onerror = () => { if (!playing) fail('Ne mogu se spojiti na poslužitelj.'); };
