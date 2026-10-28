@@ -1,0 +1,825 @@
+<!DOCTYPE html>
+<html lang="hr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
+<title>Gladni mačak</title>
+<style>
+  :root { --cream:#f7f0e1; --paper:#fffaf0; --bark:#8b5e3c; --dark:#4a3220; --moss:#6f8f5a; --amber:#d9a441; --rust:#c0553e; }
+  * { box-sizing: border-box; }
+  html, body { margin:0; height:100%; overflow:hidden; background:#bcd9e6; color:var(--dark);
+    font-family: system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+    touch-action:none; user-select:none; -webkit-user-select:none; -webkit-tap-highlight-color:transparent; }
+  canvas#game { position:fixed; inset:0; width:100%; height:100%; display:block; }
+  [hidden] { display:none !important; }
+
+  /* ---------- početni zaslon ---------- */
+  #start { position:fixed; inset:0; display:flex; align-items:center; justify-content:center; padding:12px;
+    background:linear-gradient(#a9cfe3,#e6efe0 70%,#b9cfa0); overflow:auto; touch-action:pan-y; }
+  .card { background:var(--paper); border-radius:20px; padding:22px 22px 18px; width:min(440px,100%);
+    box-shadow:0 10px 40px rgba(60,40,20,.25); border:2px solid #e6d6b8; }
+  .card h1 { margin:0 0 2px; font-size:30px; letter-spacing:.3px; }
+  .card .sub { margin:0 0 14px; color:#7a634c; font-size:14.5px; }
+  .card label { display:block; font-size:13px; font-weight:600; color:#6b5440; margin:10px 0 4px; }
+  .card input { width:100%; font-size:17px; padding:10px 12px; border-radius:12px; border:2px solid #dcc9a6;
+    background:#fff; color:var(--dark); outline:none; user-select:text; -webkit-user-select:text; }
+  .card input:focus { border-color:var(--bark); }
+  #swatches { display:grid; grid-template-columns:repeat(3,1fr); gap:8px; }
+  .sw { border:2px solid #e3d3b3; background:#fbf4e4; border-radius:14px; padding:4px 2px 6px; cursor:pointer;
+    display:flex; flex-direction:column; align-items:center; font:inherit; color:inherit; }
+  .sw canvas { width:90px; height:66px; }
+  .sw span { font-size:12px; font-weight:600; color:#6b5440; }
+  .sw.sel { border-color:var(--bark); background:#f3e3c4; box-shadow:0 0 0 2px rgba(139,94,60,.25); }
+  #play { margin-top:16px; width:100%; padding:13px; font-size:19px; font-weight:700; border:0; border-radius:14px;
+    background:var(--bark); color:#fff8ea; cursor:pointer; box-shadow:0 4px 0 #5e3d24; }
+  #play:active { transform:translateY(2px); box-shadow:0 2px 0 #5e3d24; }
+  #play:disabled { opacity:.6; }
+  #startMsg { min-height:18px; margin:8px 0 0; font-size:13.5px; color:var(--rust); text-align:center; }
+  .small { font-size:12.5px; color:#8a7560; text-align:center; margin:6px 0 0; }
+
+  /* ---------- HUD ---------- */
+  .panel { position:fixed; background:rgba(255,250,238,.88); border:2px solid rgba(139,94,60,.35); border-radius:14px;
+    padding:8px 10px; backdrop-filter:blur(3px); box-shadow:0 3px 12px rgba(60,40,20,.18); }
+  #meP { top:10px; left:10px; width:min(250px,56vw); }
+  #meP .row { display:flex; justify-content:space-between; gap:8px; font-size:14px; }
+  #meName { font-weight:700; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .bar { position:relative; height:20px; margin:6px 0 4px; border-radius:10px; background:#e8dcc4; overflow:hidden; border:1.5px solid #c9b48e; }
+  #hFill { height:100%; width:0; background:var(--moss); transition:background .3s; }
+  #hText { position:absolute; inset:0; display:flex; align-items:center; justify-content:center; font-size:12px; font-weight:700; color:#3b2a1d; text-shadow:0 0 3px #fff8; }
+  #meInfo { font-size:12px; color:#6b5440; line-height:1.35; }
+  #meP.weak { animation:blink .7s infinite alternate; }
+  @keyframes blink { to { background:rgba(255,205,190,.95); } }
+  #board { top:10px; right:10px; min-width:150px; max-width:44vw; font-size:13px; }
+  #board h4 { margin:0 0 4px; font-size:12px; text-transform:uppercase; letter-spacing:.8px; color:#8a7560; }
+  #board .r { display:flex; align-items:center; gap:6px; padding:1.5px 0; }
+  #board .r.me { font-weight:800; }
+  #board .dot { width:11px; height:11px; border-radius:50%; border:1.5px solid rgba(0,0,0,.3); flex:none; }
+  #board .nm { flex:1; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  #board .sc { font-variant-numeric:tabular-nums; }
+  #mute { position:fixed; top:auto; right:10px; bottom:10px; width:40px; height:40px; border-radius:50%; border:2px solid rgba(139,94,60,.35);
+    background:rgba(255,250,238,.88); font-size:18px; cursor:pointer; padding:0; }
+  #hint { position:fixed; left:50%; bottom:14px; transform:translateX(-50%); width:max-content; max-width:92vw; text-align:center;
+    background:rgba(60,40,24,.78); color:#fff4e0; padding:8px 14px; border-radius:12px; font-size:13.5px; transition:opacity 1s; pointer-events:none; }
+  #toast { position:fixed; left:50%; top:22%; transform:translateX(-50%); max-width:90vw; text-align:center; padding:9px 16px; border-radius:14px;
+    background:rgba(60,40,24,.85); color:#fff4e0; font-weight:600; font-size:15px; opacity:0; transition:opacity .25s; pointer-events:none; }
+  #toast.show { opacity:1; }
+  #touch { position:fixed; inset:auto 0 0 0; height:120px; pointer-events:none; }
+  #touch button { position:absolute; bottom:18px; width:74px; height:74px; border-radius:50%; border:2px solid rgba(255,255,255,.7);
+    background:rgba(74,50,32,.45); color:#fff; font-size:30px; pointer-events:auto; touch-action:none; padding:0; }
+  #touch button.on { background:rgba(74,50,32,.75); }
+  #bL { left:16px; } #bR { left:100px; } #bJ { right:60px; width:90px !important; height:90px !important; font-size:16px !important; font-weight:700; }
+  body.touch #hint { bottom:122px; }
+  @media (max-width:520px) {
+    #meP { width:57vw; padding:6px 8px; }
+    #meInfo { font-size:11px; }
+    #board { min-width:0; max-width:35vw; font-size:11.5px; padding:6px 8px; }
+    #board h4 { font-size:10px; }
+    #hint { font-size:12.5px; }
+  }
+  #lost { position:fixed; inset:0; background:rgba(40,28,18,.7); display:flex; align-items:center; justify-content:center; flex-direction:column; gap:14px; color:#fff4e0; font-size:20px; text-align:center; padding:20px; }
+  #lost button { padding:12px 22px; font-size:17px; font-weight:700; border:0; border-radius:12px; background:#f7f0e1; color:var(--dark); cursor:pointer; }
+</style>
+</head>
+<body>
+<canvas id="game"></canvas>
+
+<div id="start">
+  <div class="card">
+    <h1>🐈 Gladni mačak</h1>
+    <p class="sub">Gladan si! Penji se po tornju — što si više, to je hrana bolja.</p>
+    <label for="name">Ime tvog mačka</label>
+    <input id="name" maxlength="14" placeholder="npr. Garfield" autocomplete="off" spellcheck="false">
+    <label>Boja mačke</label>
+    <div id="swatches"></div>
+    <label for="room">Soba (neobavezno — prijatelji upišu isto)</label>
+    <input id="room" maxlength="12" placeholder="glavna" autocomplete="off" spellcheck="false">
+    <button id="play">Igraj</button>
+    <div id="startMsg"></div>
+    <p class="small">A/D ili ←/→ hodanje · W/↑/razmak skok · na mobitelu tipke na zaslonu</p>
+  </div>
+</div>
+
+<div id="hud" hidden>
+  <div class="panel" id="meP">
+    <div class="row"><span id="meName"></span><span id="meScore"></span></div>
+    <div class="bar"><div id="hFill"></div><div id="hText"></div></div>
+    <div id="meInfo"></div>
+  </div>
+  <div class="panel" id="board"></div>
+  <button id="mute" title="Zvuk (M)">🔊</button>
+  <div id="hint">Idi skroz <b>lijevo</b> i skoči s ruba — dolje čekaju mekani madraci! 🛏️</div>
+  <div id="toast"></div>
+  <div id="touch" hidden>
+    <button id="bL">◀</button><button id="bR">▶</button><button id="bJ">SKOK</button>
+  </div>
+</div>
+<div id="lost" hidden><div>Veza s poslužiteljem je prekinuta 😿</div><button onclick="location.reload()">Ponovno spoji</button></div>
+
+<script>
+(() => {
+'use strict';
+
+/* =============================================================== boje mačaka (prirodne) */
+const CATS = [
+  { n:'Narančasti',  c:'#d98c3f', p:'stripes' },
+  { n:'Sivi',        c:'#8f9399', p:'stripes' },
+  { n:'Crni',        c:'#2f2f33', p:'none' },
+  { n:'Bijeli',      c:'#f1ede4', p:'none' },
+  { n:'Krem',        c:'#e5cfa3', p:'none' },
+  { n:'Smeđi tabby', c:'#8b6a4b', p:'stripes' },
+  { n:'Plavosivi',   c:'#7d93a6', p:'none' },
+  { n:'Čokoladni',   c:'#5c3e2e', p:'none' },
+  { n:'Trobojni',    c:'#f0ebe0', p:'calico', c2:'#d98c3f', c3:'#3a3a3d' },
+];
+
+const $ = (id) => document.getElementById(id);
+const canvas = $('game');
+const ctx = canvas.getContext('2d');
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+/* =============================================================== boje: pomoćne */
+function hex2rgb(h) { h = h.replace('#', ''); return [0, 2, 4].map(i => parseInt(h.substr(i, 2), 16)); }
+function mix(a, b, t) { const A = hex2rgb(a), B = hex2rgb(b); return 'rgb(' + A.map((v, i) => Math.round(v + (B[i] - v) * t)).join(',') + ')'; }
+const dark = (c, t = .3) => mix(c, '#000000', t);
+const light = (c, t = .3) => mix(c, '#ffffff', t);
+const lum = (c) => { const [r, g, b] = hex2rgb(c); return .299 * r + .587 * g + .114 * b; };
+
+/* =============================================================== crtanje mačka */
+function drawCat(c, ci, o) {
+  const cat = CATS[ci] || CATS[0];
+  const base = cat.c, dk = dark(base, .3), lt = light(base, .4);
+  const t = o.t || 0, run = o.run || 0, air = !!o.air;
+  c.save();
+  c.translate(o.x, o.y);
+  c.scale(o.face || 1, 1);
+  const k = clamp(-(o.vy || 0) / 5000, -.1, .14);
+  c.scale(1 - k * .6, 1 + k);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  const ph = t * 15, sw = run * 7;
+  const sway = Math.sin(t * 3 + (o.seed || 0));
+  const headDrop = o.weak ? 2.5 : 0;
+
+  // rep
+  c.strokeStyle = base; c.lineWidth = 7;
+  c.beginPath(); c.moveTo(-16, -19);
+  c.bezierCurveTo(-30, -17, -38 + sway * 3, -28, -33 + sway * 5, -44 + (o.weak ? 8 : 0));
+  c.stroke();
+  c.fillStyle = cat.p === 'calico' ? cat.c3 : dk;
+  c.beginPath(); c.arc(-33 + sway * 5, -44 + (o.weak ? 8 : 0), 3.7, 0, 7); c.fill();
+
+  // noge
+  const leg = (x, phase, col) => {
+    c.strokeStyle = col; c.lineWidth = 6; c.beginPath();
+    let fx = x, fy = -1, lift = 0;
+    if (air) { fx = x + (x > 0 ? 6 : -7); fy = -7; }
+    else { fx = x + Math.sin(ph + phase) * sw; lift = Math.max(0, Math.cos(ph + phase)) * sw * .5; }
+    c.moveTo(x, -10); c.lineTo(fx, fy - lift); c.stroke();
+  };
+  leg(-11, Math.PI, dk); leg(9, 0, dk); leg(-15, 0, base); leg(13, Math.PI, base);
+
+  // tijelo
+  c.fillStyle = base;
+  c.beginPath(); c.ellipse(0, -17, 20, 11.5, 0, 0, 7); c.fill();
+  c.save();
+  c.beginPath(); c.ellipse(0, -17, 20, 11.5, 0, 0, 7); c.clip();
+  if (cat.p !== 'calico') {
+    c.fillStyle = lt; c.globalAlpha = .45;
+    c.beginPath(); c.ellipse(2, -10, 15, 5.5, 0, 0, 7); c.fill();
+    c.globalAlpha = 1;
+  }
+  if (cat.p === 'stripes') {
+    c.strokeStyle = dk; c.globalAlpha = .55; c.lineWidth = 2.6;
+    for (let i = 0; i < 4; i++) { c.beginPath(); c.moveTo(-12 + i * 8, -30); c.lineTo(-10 + i * 8, -20); c.stroke(); }
+    c.globalAlpha = 1;
+  }
+  if (cat.p === 'calico') {
+    c.fillStyle = cat.c2; c.beginPath(); c.arc(-8, -24, 10, 0, 7); c.fill();
+    c.fillStyle = cat.c3; c.beginPath(); c.arc(9, -13, 8, 0, 7); c.fill();
+    c.beginPath(); c.arc(-17, -13, 6.5, 0, 7); c.fill();
+  }
+  c.restore();
+  c.strokeStyle = 'rgba(0,0,0,.22)'; c.lineWidth = 1.2;
+  c.beginPath(); c.ellipse(0, -17, 20, 11.5, 0, 0, 7); c.stroke();
+
+  // glava
+  c.save(); c.translate(0, headDrop);
+  c.fillStyle = base;
+  // uši
+  c.beginPath(); c.moveTo(9, -31); c.lineTo(10.5, -43); c.lineTo(18, -35); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(17, -35); c.lineTo(25, -43); c.lineTo(26.5, -31); c.closePath(); c.fill();
+  c.fillStyle = '#e4a9a0';
+  c.beginPath(); c.moveTo(11.5, -33); c.lineTo(12, -39.5); c.lineTo(16, -35.5); c.closePath(); c.fill();
+  c.beginPath(); c.moveTo(19, -35.5); c.lineTo(23, -39.5); c.lineTo(24, -33); c.closePath(); c.fill();
+  // lice
+  c.fillStyle = base;
+  c.beginPath(); c.arc(17, -26, 10.5, 0, 7); c.fill();
+  if (cat.p === 'calico') {
+    c.save(); c.beginPath(); c.arc(17, -26, 10.5, 0, 7); c.clip();
+    c.fillStyle = cat.c2; c.beginPath(); c.arc(11, -33, 8, 0, 7); c.fill();
+    c.restore();
+  }
+  c.strokeStyle = 'rgba(0,0,0,.22)'; c.lineWidth = 1.2;
+  c.beginPath(); c.arc(17, -26, 10.5, 0, 7); c.stroke();
+  if (cat.p === 'stripes') {
+    c.strokeStyle = dk; c.globalAlpha = .6; c.lineWidth = 2;
+    for (let i = 0; i < 3; i++) { c.beginPath(); c.moveTo(13 + i * 4, -36); c.lineTo(13.5 + i * 4, -32); c.stroke(); }
+    c.globalAlpha = 1;
+  }
+  // njuška (svjetlija)
+  c.fillStyle = lt; c.globalAlpha = .6;
+  c.beginPath(); c.ellipse(23, -21.5, 5, 3.6, 0, 0, 7); c.fill(); c.globalAlpha = 1;
+  // oči
+  const blink = (Math.sin(t * .9 + (o.seed || 0) * 3) > .985) || o.weak;
+  const eye = (ex) => {
+    if (o.stun) {
+      c.strokeStyle = '#2a1d14'; c.lineWidth = 1.6; c.beginPath();
+      c.moveTo(ex - 2.2, -29); c.lineTo(ex + 2.2, -24.5); c.moveTo(ex + 2.2, -29); c.lineTo(ex - 2.2, -24.5); c.stroke();
+    } else if (blink) {
+      c.strokeStyle = '#2a1d14'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(ex - 2.6, -26.5); c.lineTo(ex + 2.6, -26.5); c.stroke();
+    } else {
+      c.fillStyle = '#e6c14a'; c.beginPath(); c.ellipse(ex, -27, 2.8, 3.3, 0, 0, 7); c.fill();
+      c.fillStyle = '#1d140d'; c.beginPath(); c.ellipse(ex + .3, -27, 1.1, 2.7, 0, 0, 7); c.fill();
+    }
+  };
+  eye(13.8); eye(21.2);
+  // nos i brkovi
+  c.fillStyle = '#d98b8b';
+  c.beginPath(); c.moveTo(25.2, -23.3); c.lineTo(28.4, -23.3); c.lineTo(26.8, -21); c.closePath(); c.fill();
+  c.strokeStyle = lum(base) > 140 ? 'rgba(70,45,30,.6)' : 'rgba(240,240,240,.75)'; c.lineWidth = 1;
+  c.beginPath();
+  c.moveTo(25, -21.5); c.lineTo(33, -23.5); c.moveTo(25, -20.5); c.lineTo(33.5, -20.5); c.moveTo(25, -19.5); c.lineTo(32.5, -17.5);
+  c.stroke();
+  c.restore();
+  c.restore();
+}
+
+/* =============================================================== crtanje hrane */
+function drawFood(c, tier, x, y, t) {
+  c.save(); c.translate(x, y);
+  c.lineCap = 'round'; c.lineJoin = 'round';
+  if (tier >= 2) {
+    const R = 24 + tier * 2;
+    const g = c.createRadialGradient(0, 0, 2, 0, 0, R);
+    const a = .1 + tier * .045;
+    g.addColorStop(0, 'rgba(255,226,140,' + (a * 2) + ')'); g.addColorStop(1, 'rgba(255,226,140,0)');
+    c.fillStyle = g; c.beginPath(); c.arc(0, 0, R, 0, 7); c.fill();
+  }
+  const bowl = (col, rim) => {
+    c.fillStyle = col; c.beginPath(); c.moveTo(-13, 2); c.lineTo(13, 2);
+    c.quadraticCurveTo(10, 13, 0, 13); c.quadraticCurveTo(-10, 13, -13, 2); c.fill();
+    c.fillStyle = rim; c.beginPath(); c.ellipse(0, 2, 13, 3.4, 0, 0, 7); c.fill();
+  };
+  switch (tier) {
+    case 0:
+      bowl('#b5714b', '#c98b63');
+      c.fillStyle = '#7a4a2a';
+      for (const [px, py] of [[-7, 0], [-2, -3.5], [4, -2], [8, 1], [0, 0.5], [-5, 2]]) { c.beginPath(); c.arc(px, py, 3.1, 0, 7); c.fill(); }
+      break;
+    case 1:
+      bowl('#8aa7b8', '#a9c0cc');
+      c.fillStyle = '#fbf8ef'; c.beginPath(); c.ellipse(0, 2, 11, 2.7, 0, 0, 7); c.fill();
+      break;
+    case 2:
+      c.fillStyle = '#b5bec4'; c.fillRect(-11, -7, 22, 17);
+      c.fillStyle = '#3f6f94'; c.fillRect(-11, -2, 22, 8);
+      c.fillStyle = '#f4f1e8'; c.beginPath(); c.ellipse(-1, 2, 5, 2.4, 0, 0, 7); c.fill();
+      c.beginPath(); c.moveTo(4, 2); c.lineTo(8, -.5); c.lineTo(8, 4.5); c.closePath(); c.fill();
+      c.fillStyle = '#dde3e6'; c.beginPath(); c.ellipse(0, -7, 11, 3.4, 0, 0, 7); c.fill();
+      c.strokeStyle = '#8d979d'; c.lineWidth = 1; c.beginPath(); c.ellipse(0, 10, 11, 3, 0, 0, Math.PI); c.stroke();
+      break;
+    case 3:
+      c.rotate(-.35);
+      c.strokeStyle = '#f1ead8'; c.lineWidth = 4.5; c.beginPath(); c.moveTo(4, 3); c.lineTo(13, 8); c.stroke();
+      c.fillStyle = '#f1ead8'; c.beginPath(); c.arc(14, 6.5, 2.8, 0, 7); c.arc(13.5, 10.5, 2.8, 0, 7); c.fill();
+      c.fillStyle = '#c6853f'; c.beginPath(); c.ellipse(-3, -2, 11.5, 9, 0, 0, 7); c.fill();
+      c.fillStyle = 'rgba(255,230,170,.5)'; c.beginPath(); c.ellipse(-6, -5, 5, 3, -.4, 0, 7); c.fill();
+      break;
+    case 4:
+      c.fillStyle = '#f2cdb8'; c.beginPath(); c.moveTo(-14, 1); c.quadraticCurveTo(-6, -10, 4, -7); c.quadraticCurveTo(10, -6, 14, -1);
+      c.quadraticCurveTo(5, 9, -14, 1); c.fill();
+      c.strokeStyle = '#e1a38b'; c.lineWidth = 1.4;
+      for (let i = -8; i <= 6; i += 5) { c.beginPath(); c.moveTo(i, -3); c.lineTo(i + 3, 3.5); c.stroke(); }
+      c.fillStyle = '#7aa66a'; for (const [px, py] of [[-4, -4], [3, 1], [8, -2]]) { c.beginPath(); c.arc(px, py, 1.1, 0, 7); c.fill(); }
+      break;
+    case 5:
+      c.fillStyle = '#e5876a'; c.beginPath(); c.ellipse(-2, 0, 13, 7, 0, 0, 7); c.fill();
+      c.beginPath(); c.moveTo(9, 0); c.lineTo(18, -7); c.lineTo(18, 7); c.closePath(); c.fill();
+      c.fillStyle = '#f3b19a'; c.beginPath(); c.ellipse(-3, 3, 10, 3, 0, 0, 7); c.fill();
+      c.fillStyle = '#fff'; c.beginPath(); c.arc(-10, -1.5, 1.8, 0, 7); c.fill();
+      c.fillStyle = '#222'; c.beginPath(); c.arc(-10.3, -1.5, .9, 0, 7); c.fill();
+      break;
+    case 6:
+      c.fillStyle = '#9c3f34'; c.beginPath(); c.roundRect(-13, -6, 26, 14, 6); c.fill();
+      c.strokeStyle = '#5e2219'; c.lineWidth = 1.8;
+      for (let i = -8; i <= 8; i += 6) { c.beginPath(); c.moveTo(i - 2, -4); c.lineTo(i + 3, 6); c.stroke(); }
+      c.strokeStyle = '#6f8f4e'; c.lineWidth = 1.6; c.beginPath(); c.moveTo(-4, -6); c.lineTo(6, -11);
+      for (let i = 0; i < 4; i++) { c.moveTo(-2 + i * 2.5, -7 - i * 1.2); c.lineTo(-1 + i * 2.5, -10.5 - i * 1.2); }
+      c.stroke();
+      break;
+    default:
+      c.fillStyle = '#d8b04a'; c.beginPath(); c.ellipse(0, 8, 17, 4.5, 0, 0, 7); c.fill();
+      c.fillStyle = '#ecd07a'; c.beginPath(); c.ellipse(0, 7, 13, 2.8, 0, 0, 7); c.fill();
+      c.strokeStyle = '#e8805f'; c.lineWidth = 7; c.beginPath(); c.moveTo(-10, 4); c.quadraticCurveTo(-8, -9, 6, -6); c.stroke();
+      c.fillStyle = '#e8805f'; c.beginPath(); c.moveTo(6, -6); c.lineTo(13, -2); c.lineTo(11, -10); c.closePath(); c.fill();
+      c.strokeStyle = '#c4573a'; c.lineWidth = 1; c.beginPath(); for (let i = 0; i < 3; i++) { c.moveTo(-9 + i * 3, -2 + i * 1); c.lineTo(-12 + i * 3, 3); } c.stroke();
+      const s = .5 + .5 * Math.sin(t * 4);
+      c.fillStyle = 'rgba(255,255,255,' + (.5 + .5 * s) + ')';
+      for (const [sx, sy, sz] of [[10, -10, 3], [-12, -9, 2.2]]) {
+        c.beginPath(); c.moveTo(sx, sy - sz * (1 + s)); c.lineTo(sx + sz * .35, sy - sz * .35); c.lineTo(sx + sz * (1 + s), sy);
+        c.lineTo(sx + sz * .35, sy + sz * .35); c.lineTo(sx, sy + sz * (1 + s)); c.lineTo(sx - sz * .35, sy + sz * .35);
+        c.lineTo(sx - sz * (1 + s), sy); c.lineTo(sx - sz * .35, sy - sz * .35); c.closePath(); c.fill();
+      }
+  }
+  c.restore();
+}
+
+/* =============================================================== izbor boje */
+let selColor = 0;
+const swWrap = $('swatches');
+CATS.forEach((cat, i) => {
+  const b = document.createElement('button');
+  b.className = 'sw'; b.type = 'button';
+  const cv = document.createElement('canvas');
+  cv.width = 180; cv.height = 132;
+  const cc = cv.getContext('2d');
+  cc.scale(2, 2);
+  drawCat(cc, i, { x: 46, y: 60, face: 1, t: 0, seed: i });
+  const sp = document.createElement('span'); sp.textContent = cat.n;
+  b.appendChild(cv); b.appendChild(sp);
+  b.addEventListener('click', () => select(i));
+  swWrap.appendChild(b);
+});
+function select(i) {
+  selColor = i;
+  [...swWrap.children].forEach((el, j) => el.classList.toggle('sel', j === i));
+}
+let saved = {};
+try { saved = JSON.parse(localStorage.getItem('gladniMacak') || '{}'); } catch (e) {}
+$('name').value = saved.name || '';
+$('room').value = saved.room || '';
+select(Number.isInteger(saved.color) && saved.color < CATS.length ? saved.color : 0);
+
+/* =============================================================== zvuk (sintetiziran, bez datoteka) */
+let ac = null, muted = false;
+function audio() {
+  if (!ac) { try { ac = new (window.AudioContext || window.webkitAudioContext)(); } catch (e) {} }
+  if (ac && ac.state === 'suspended') ac.resume();
+  return ac;
+}
+function tone(f0, f1, dur, type = 'sine', vol = .15, delay = 0) {
+  if (muted) return; const a = audio(); if (!a) return;
+  const t = a.currentTime + delay, o = a.createOscillator(), g = a.createGain();
+  o.type = type; o.frequency.setValueAtTime(f0, t); o.frequency.exponentialRampToValueAtTime(Math.max(20, f1), t + dur);
+  g.gain.setValueAtTime(.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + .012); g.gain.exponentialRampToValueAtTime(.0001, t + dur);
+  o.connect(g); g.connect(a.destination); o.start(t); o.stop(t + dur + .03);
+}
+const SND = {
+  jump: (v) => tone(320, 640, .12, 'sine', .1 * v),
+  eat: (v) => { tone(500, 720, .08, 'triangle', .16 * v); tone(720, 920, .1, 'triangle', .16 * v, .09); tone(430, 300, .25, 'sawtooth', .05 * v, .18); },
+  bounce: (v) => { tone(190, 70, .35, 'sine', .22 * v); tone(280, 110, .3, 'triangle', .09 * v, .05); },
+  bump: (v) => tone(150, 60, .13, 'square', .12 * v),
+  ouch: (v) => tone(320, 70, .4, 'sawtooth', .15 * v),
+  faint: (v) => tone(420, 90, .7, 'sine', .18 * v),
+};
+$('mute').addEventListener('click', toggleMute);
+function toggleMute() { muted = !muted; $('mute').textContent = muted ? '🔇' : '🔊'; }
+
+/* =============================================================== stanje igre */
+let ws = null, myId = null, world = null, playing = false;
+const players = new Map();
+let foodOn = [];
+const cam = { x: 0, y: 0, init: false };
+let scale = 1, vw = 1, vh = 1, dpr = 1;
+let time = 0, maxH = 0;
+const floaters = [], parts = [];
+const inp = { l: 0, r: 0, j: 0 };
+let sentInp = '';
+
+/* ---------- veza ---------- */
+$('play').addEventListener('click', connect);
+$('name').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+$('room').addEventListener('keydown', (e) => { if (e.key === 'Enter') connect(); });
+
+function connect() {
+  audio();
+  if (location.protocol === 'file:') {
+    $('startMsg').textContent = 'Igru treba otvoriti preko poslužitelja (npm start → http://localhost:3000).';
+    return;
+  }
+  const name = $('name').value.trim() || 'Mačak';
+  const room = $('room').value.trim();
+  try { localStorage.setItem('gladniMacak', JSON.stringify({ name: $('name').value.trim(), color: selColor, room })); } catch (e) {}
+  $('play').disabled = true; $('play').textContent = 'Spajanje…'; $('startMsg').textContent = '';
+  ws = new WebSocket((location.protocol === 'https:' ? 'wss://' : 'ws://') + location.host);
+  ws.onopen = () => ws.send(JSON.stringify({ t: 'join', name, color: selColor, room }));
+  ws.onmessage = (ev) => { let m; try { m = JSON.parse(ev.data); } catch (e) { return; } onMsg(m); };
+  ws.onerror = () => { if (!playing) fail('Ne mogu se spojiti na poslužitelj.'); };
+  ws.onclose = () => { if (playing) $('lost').hidden = false; else fail('Veza je prekinuta.'); };
+}
+function fail(msg) { $('startMsg').textContent = msg; $('play').disabled = false; $('play').textContent = 'Igraj'; }
+
+function onMsg(m) {
+  switch (m.t) {
+    case 'init':
+      world = m.world; myId = m.id;
+      foodOn = world.foods.map(() => true);
+      players.clear();
+      m.players.forEach(addPlayer);
+      buildPatterns();
+      $('start').hidden = true; $('hud').hidden = false;
+      if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) { $('touch').hidden = false; document.body.classList.add('touch'); }
+      playing = true; cam.init = false;
+      $('meName').textContent = players.get(myId).name;
+      setTimeout(() => { $('hint').style.opacity = 0; }, 14000);
+      break;
+    case 'join': addPlayer(m.p); break;
+    case 'leave': players.delete(m.id); break;
+    case 'err': if (ws) ws.onclose = null; fail(m.msg); break;
+    case 's': onState(m); break;
+  }
+}
+function addPlayer(p) {
+  players.set(p.id, { id: p.id, name: p.name, color: p.color, x: 0, y: 0, vx: 0, vy: 0, face: 1, og: true,
+    hunger: 0, score: 0, stun: 0, rx: 0, ry: 0, got: 0, at: Math.random() * 10, run: 0, seed: Math.random() * 6, fresh: true });
+}
+function onState(m) {
+  const now = performance.now();
+  for (const a of m.p) {
+    const p = players.get(a[0]); if (!p) continue;
+    p.x = a[1]; p.y = a[2]; p.vx = a[3]; p.vy = a[4]; p.face = a[5]; p.og = !!a[6];
+    p.hunger = a[7]; p.score = a[8]; p.stun = a[9]; p.got = now;
+    if (p.fresh) { p.rx = p.x; p.ry = p.y; p.fresh = false; }
+  }
+  for (let i = 0; i < m.f.length; i++) foodOn[i] = m.f[i] === '1';
+  for (const e of m.e) onEvent(e);
+}
+
+/* ---------- događaji ---------- */
+const nearMe = (x, y) => { const me = players.get(myId); if (!me) return 0; const d = Math.hypot(x - me.rx, y - me.ry); return d < 900 ? 1 - d / 1100 : 0; };
+function puff(x, y, n, col, spd = 90) {
+  for (let i = 0; i < n; i++) {
+    const a = Math.random() * 7, s = Math.random() * spd;
+    parts.push({ x, y, vx: Math.cos(a) * s, vy: Math.sin(a) * s - 40, life: 0, max: .5 + Math.random() * .4, r: 2 + Math.random() * 3, col });
+  }
+}
+function onEvent(e) {
+  const v = nearMe(e.x !== undefined ? e.x : 0, e.y !== undefined ? e.y : 0);
+  const mine = e.id === myId;
+  switch (e.k) {
+    case 'jump': if (v > 0) SND.jump(v); puff(e.x, e.y, 4, 'rgba(255,255,255,.6)', 50); break;
+    case 'bounce': if (v > 0) SND.bounce(v); puff(e.x, e.y, 10, 'rgba(255,248,230,.8)', 120); break;
+    case 'bump': if (v > 0) SND.bump(v); puff(e.x, e.y, 8, 'rgba(255,230,140,.9)', 140); break;
+    case 'eat': {
+      const T = world.tiers[e.tier];
+      floaters.push({ x: e.x, y: e.y - 56, text: '+' + e.pts, sub: T.n, life: 0, col: '#fff3c4' });
+      puff(e.x, e.y - 15, 8, 'rgba(255,214,120,.9)', 100);
+      if (mine) { SND.eat(1); toast('Nam! ' + T.n + ' — glad −' + T.r + '%'); } else if (v > 0) SND.eat(v * .7);
+      break;
+    }
+    case 'ouch': if (mine) { SND.ouch(1); toast('Au! Pao si s prevelike visine. Skoči lijevo na madrace!'); } else if (v > 0) SND.ouch(v * .6); puff(e.x, e.y, 8, 'rgba(120,90,60,.7)', 100); break;
+    case 'faint': if (mine) { SND.faint(1); toast('Pao si u nesvijest od gladi… 😵 probudio si se dolje.'); } break;
+  }
+}
+let toastTimer = 0;
+function toast(msg, ms = 2600) {
+  const t = $('toast'); t.textContent = msg; t.classList.add('show');
+  clearTimeout(toastTimer); toastTimer = setTimeout(() => t.classList.remove('show'), ms);
+}
+
+/* =============================================================== tipke */
+const KEYMAP = { ArrowLeft: 'l', KeyA: 'l', ArrowRight: 'r', KeyD: 'r', ArrowUp: 'j', KeyW: 'j', Space: 'j' };
+addEventListener('keydown', (e) => {
+  if (!playing) return;
+  if (e.code === 'KeyM') { toggleMute(); return; }
+  const k = KEYMAP[e.code]; if (!k) return;
+  e.preventDefault(); inp[k] = 1; sendInp();
+});
+addEventListener('keyup', (e) => {
+  if (!playing) return;
+  const k = KEYMAP[e.code]; if (!k) return;
+  e.preventDefault(); inp[k] = 0; sendInp();
+});
+function releaseAll() { inp.l = inp.r = inp.j = 0; sendInp(); }
+addEventListener('blur', releaseAll);
+document.addEventListener('visibilitychange', () => { if (document.hidden) releaseAll(); });
+function sendInp(force) {
+  const s = inp.l + ',' + inp.r + ',' + inp.j;
+  if (!force && s === sentInp) return;
+  sentInp = s;
+  if (ws && ws.readyState === 1) ws.send(JSON.stringify({ t: 'i', l: inp.l, r: inp.r, j: inp.j }));
+}
+setInterval(() => { if (playing) sendInp(true); }, 2000);
+for (const [id, k] of [['bL', 'l'], ['bR', 'r'], ['bJ', 'j']]) {
+  const b = $(id);
+  const down = (e) => { e.preventDefault(); inp[k] = 1; b.classList.add('on'); sendInp(); };
+  const up = (e) => { e.preventDefault(); inp[k] = 0; b.classList.remove('on'); sendInp(); };
+  b.addEventListener('pointerdown', down);
+  b.addEventListener('pointerup', up); b.addEventListener('pointercancel', up); b.addEventListener('pointerleave', up);
+  b.addEventListener('contextmenu', (e) => e.preventDefault());
+}
+
+/* =============================================================== uzorci (zid, drvo, cigle) */
+let wallPat = null, brickPat = null;
+function buildPatterns() {
+  const w = document.createElement('canvas'); w.width = 120; w.height = 130;
+  const c = w.getContext('2d');
+  c.fillStyle = '#dccaa6'; c.fillRect(0, 0, 120, 130);
+  c.fillStyle = 'rgba(120,90,50,.09)';
+  for (let x = 0; x < 120; x += 60) c.fillRect(x, 0, 30, 130);
+  c.fillStyle = 'rgba(255,255,255,.12)'; c.fillRect(0, 0, 120, 3);
+  c.strokeStyle = 'rgba(110,80,45,.13)'; c.lineWidth = 2; c.beginPath(); c.moveTo(0, 129); c.lineTo(120, 129); c.stroke();
+  wallPat = ctx.createPattern(w, 'repeat');
+  const b = document.createElement('canvas'); b.width = 60; b.height = 40;
+  const d = b.getContext('2d');
+  d.fillStyle = '#8f735b'; d.fillRect(0, 0, 60, 40);
+  d.strokeStyle = '#6f5644'; d.lineWidth = 2;
+  d.beginPath(); d.moveTo(0, 1); d.lineTo(60, 1); d.moveTo(0, 21); d.lineTo(60, 21);
+  d.moveTo(30, 1); d.lineTo(30, 21); d.moveTo(0, 21); d.lineTo(0, 40); d.moveTo(60, 21); d.lineTo(60, 40); d.stroke();
+  d.fillStyle = 'rgba(255,255,255,.07)'; d.fillRect(3, 3, 25, 6); d.fillRect(33, 23, 25, 6);
+  brickPat = ctx.createPattern(b, 'repeat');
+}
+
+/* =============================================================== crtanje svijeta */
+const CLOUDS = Array.from({ length: 18 }, (_, i) => ({ x: (i * 397) % 3200, y: 150 + ((i * 211) % 2000), s: .8 + (i % 4) * .35, sp: 4 + (i % 5) * 2 }));
+
+function drawSky(W, H) {
+  const hf = clamp((world.ground - (cam.y + vh / 2)) / (world.spacing * world.levels + 300), 0, 1);
+  const g = ctx.createLinearGradient(0, 0, 0, H);
+  g.addColorStop(0, mix('#8fc1e3', '#4d82b8', hf));
+  g.addColorStop(1, mix('#dcecf1', '#a6cde4', hf));
+  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // sunce
+  ctx.fillStyle = 'rgba(255,244,200,.55)';
+  ctx.beginPath(); ctx.arc(W * .82, H * .2 + hf * 40, 46, 0, 7); ctx.fill();
+  ctx.fillStyle = 'rgba(255,244,200,.25)';
+  ctx.beginPath(); ctx.arc(W * .82, H * .2 + hf * 40, 78, 0, 7); ctx.fill();
+  // oblaci (paralaksa)
+  ctx.fillStyle = 'rgba(255,255,255,.72)';
+  for (const c of CLOUDS) {
+    const wx = ((c.x + time * c.sp) % 3400) - 300;
+    const sx = (wx - cam.x * .45) * scale, sy = (c.y - cam.y * .55) * scale;
+    if (sy < -120 || sy > H + 120) continue;
+    const s = c.s * scale;
+    ctx.beginPath();
+    ctx.arc(sx, sy, 22 * s, 0, 7); ctx.arc(sx + 26 * s, sy - 10 * s, 28 * s, 0, 7);
+    ctx.arc(sx + 56 * s, sy, 22 * s, 0, 7); ctx.arc(sx + 28 * s, sy + 8 * s, 24 * s, 0, 7);
+    ctx.fill();
+  }
+}
+function drawHills(W) {
+  const base = (world.ground - cam.y) * scale;
+  if (base < -50) return;
+  const layer = (par, amp, col, off) => {
+    ctx.fillStyle = col; ctx.beginPath(); ctx.moveTo(0, base + 2);
+    for (let x = 0; x <= W; x += 20) {
+      const wx = x / scale + cam.x * par;
+      const h = (Math.sin(wx * .004 + off) * .5 + .5) * amp + (Math.sin(wx * .011 + off * 2) * .5 + .5) * amp * .35;
+      ctx.lineTo(x, base - (40 + h) * scale);
+    }
+    ctx.lineTo(W, base + 2); ctx.closePath(); ctx.fill();
+  };
+  layer(.25, 180, '#a8c3a6', 1); layer(.5, 120, '#8fb084', 3);
+  // drveće iza madraca
+  for (let i = 0; i < 14; i++) {
+    const wx = -640 + i * 118 - 20, sx = (wx - cam.x * .85) * scale + cam.x * .85 * scale * 0;
+    const px = (wx - cam.x) * scale;
+    const s = (.8 + (i % 3) * .25) * scale;
+    ctx.fillStyle = '#6b4f37'; ctx.fillRect(px - 4 * s, base - 46 * s, 8 * s, 46 * s);
+    ctx.fillStyle = i % 2 ? '#5f8453' : '#6f9660';
+    ctx.beginPath(); ctx.arc(px, base - 64 * s, 26 * s, 0, 7); ctx.arc(px - 16 * s, base - 50 * s, 18 * s, 0, 7); ctx.arc(px + 16 * s, base - 50 * s, 18 * s, 0, 7); ctx.fill();
+  }
+}
+
+function drawWorld() {
+  const w = world, top = w.towerTop, G = w.ground;
+  // trava i zemlja
+  ctx.fillStyle = '#6b5640'; ctx.fillRect(w.left - 200, G, (w.right - w.left) + 600, 500);
+  ctx.fillStyle = '#7fa05f'; ctx.fillRect(w.left - 200, G - 2, (w.right - w.left) + 600, 16);
+  ctx.fillStyle = '#6f8f50';
+  for (let x = w.left; x < w.right + 80; x += 38) ctx.fillRect(x, G - 7, 14, 9);
+
+  // pozadinski zid tornja
+  ctx.save();
+  ctx.fillStyle = wallPat; ctx.fillRect(0, top, w.right, G - top);
+  const sh = ctx.createLinearGradient(0, 0, 60, 0); sh.addColorStop(0, 'rgba(60,40,20,.28)'); sh.addColorStop(1, 'rgba(60,40,20,0)');
+  ctx.fillStyle = sh; ctx.fillRect(0, top, 60, G - top);
+  ctx.restore();
+  // prozori
+  for (let L = 1; L < w.levels; L += 2) {
+    const wx = 120 + ((L * 263) % 700), wy = G - w.spacing * L - 112;
+    ctx.fillStyle = '#7a5636'; ctx.fillRect(wx - 5, wy - 5, 70, 70);
+    const gl = ctx.createLinearGradient(0, wy, 0, wy + 60); gl.addColorStop(0, '#c7e0ee'); gl.addColorStop(1, '#9cc3d8');
+    ctx.fillStyle = gl; ctx.fillRect(wx, wy, 60, 60);
+    ctx.fillStyle = '#7a5636'; ctx.fillRect(wx + 28, wy, 4, 60); ctx.fillRect(wx, wy + 28, 60, 4);
+  }
+  // znak prema madracima
+  const sx = 24, sy = G - 215;
+  ctx.fillStyle = '#7a5636'; ctx.fillRect(sx + 20, sy + 34, 8, 40);
+  ctx.fillStyle = '#9a6b43'; ctx.beginPath(); ctx.roundRect(sx - 8, sy, 170, 40, 8); ctx.fill();
+  ctx.strokeStyle = '#6f4a2c'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#fff4dc'; ctx.font = '700 18px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+  ctx.fillText('◀ MADRACI', sx + 8, sy + 21);
+
+  // desni zid (cigle) i krov
+  ctx.fillStyle = brickPat; ctx.fillRect(w.right, top - 24, 90, G - top + 24);
+  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(w.right, top - 24, 6, G - top + 24);
+  ctx.fillStyle = '#6b4a2f'; ctx.fillRect(-26, top - 26, w.right + 130, 26);
+  ctx.fillStyle = '#85603f'; ctx.fillRect(-26, top - 26, w.right + 130, 6);
+
+  // police
+  for (const [x1, x2, y, kind] of w.platforms) {
+    if (kind !== 'shelf') continue;
+    ctx.fillStyle = 'rgba(60,40,20,.14)'; ctx.fillRect(x1, y + 16, x2 - x1, 9);
+    const g = ctx.createLinearGradient(0, y, 0, y + 16);
+    g.addColorStop(0, '#b88556'); g.addColorStop(.3, '#9a6b43'); g.addColorStop(1, '#73492b');
+    ctx.fillStyle = g; ctx.beginPath(); ctx.roundRect(x1, y, x2 - x1, 16, 3); ctx.fill();
+    ctx.strokeStyle = 'rgba(60,35,15,.3)'; ctx.lineWidth = 1;
+    for (let x = x1 + 30; x < x2 - 10; x += 47) { ctx.beginPath(); ctx.moveTo(x, y + 6); ctx.lineTo(Math.min(x + 20, x2 - 6), y + 6); ctx.moveTo(x + 8, y + 11); ctx.lineTo(Math.min(x + 26, x2 - 6), y + 11); ctx.stroke(); }
+    ctx.fillStyle = '#73492b';
+    for (const bx of [x1 + 20, x2 - 40]) if (bx > x1 && bx < x2) { ctx.beginPath(); ctx.moveTo(bx, y + 16); ctx.lineTo(bx + 20, y + 16); ctx.lineTo(bx, y + 36); ctx.closePath(); ctx.fill(); }
+  }
+
+  // madraci
+  const M = w.mattress, cols = ['#b4c4a2', '#dfcfaa', '#a9bcc8'];
+  for (let i = 2; i >= 0; i--) {
+    const y = M.top + i * 12;
+    ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.roundRect(M.x1, y, M.x2 - M.x1, 13, 6); ctx.fill();
+    ctx.strokeStyle = 'rgba(70,50,30,.35)'; ctx.lineWidth = 1.4; ctx.stroke();
+    ctx.strokeStyle = 'rgba(70,50,30,.22)'; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(M.x1 + 8, y + 6.5); ctx.lineTo(M.x2 - 8, y + 6.5); ctx.stroke(); ctx.setLineDash([]);
+    ctx.fillStyle = 'rgba(70,50,30,.28)';
+    for (let x = M.x1 + 40; x < M.x2 - 20; x += 70) { ctx.beginPath(); ctx.arc(x, y + 6.5, 2, 0, 7); ctx.fill(); }
+  }
+}
+
+function drawFoods() {
+  const me = players.get(myId);
+  world.foods.forEach(([id, x, y, tier], i) => {
+    if (!foodOn[i]) return;
+    if (x < cam.x - 40 || x > cam.x + vw + 40 || y < cam.y - 60 || y > cam.y + vh + 60) return;
+    const bob = Math.sin(time * 3 + id * 1.7) * 2.5;
+    ctx.fillStyle = 'rgba(40,25,10,.18)'; ctx.beginPath(); ctx.ellipse(x, y + 18, 13, 3.5, 0, 0, 7); ctx.fill();
+    drawFood(ctx, tier, x, y + bob, time + id);
+    if (me && Math.hypot(me.rx - x, me.ry - 15 - y) < 150) {
+      ctx.font = '600 12px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+      const T = world.tiers[tier];
+      const txt = T.n + ' ' + '★'.repeat(Math.min(5, Math.ceil((tier + 1) * 5 / 8)));
+      const tw = ctx.measureText(txt).width + 12;
+      ctx.fillStyle = 'rgba(255,250,238,.9)'; ctx.beginPath(); ctx.roundRect(x - tw / 2, y - 40, tw, 18, 9); ctx.fill();
+      ctx.fillStyle = '#4a3220'; ctx.fillText(txt, x, y - 27);
+    }
+  });
+}
+
+function drawPlayers(dt) {
+  const list = [...players.values()].filter(p => !p.fresh).sort((a, b) => (a.id === myId) - (b.id === myId));
+  for (const p of list) {
+    if (p.rx < cam.x - 100 || p.rx > cam.x + vw + 100 || p.ry < cam.y - 100 || p.ry > cam.y + vh + 140) continue;
+    const mine = p.id === myId;
+    const weak = p.hunger >= 100;
+    p.at += dt * (p.run > .05 ? 1 : .35);
+    // sjena
+    if (p.og) { ctx.fillStyle = 'rgba(40,25,10,.2)'; ctx.beginPath(); ctx.ellipse(p.rx, p.ry + 1, 20, 4, 0, 0, 7); ctx.fill(); }
+    drawCat(ctx, p.color, { x: p.rx, y: p.ry, face: p.face, t: p.at, run: p.run, air: !p.og, vy: p.vy, stun: p.stun, weak, seed: p.seed });
+    if (p.stun) {
+      ctx.fillStyle = '#f3d36b';
+      for (let i = 0; i < 3; i++) {
+        const a = time * 5 + i * 2.1; const sx = p.rx + 8 + Math.cos(a) * 15, sy = p.ry - 50 + Math.sin(a) * 4;
+        ctx.beginPath(); ctx.arc(sx, sy, 2.6, 0, 7); ctx.fill();
+      }
+    }
+    // ime
+    ctx.font = (mine ? '700 ' : '600 ') + '13px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'alphabetic';
+    const tw = ctx.measureText(p.name).width + 14, ny = p.ry - 60;
+    ctx.fillStyle = mine ? 'rgba(255,236,180,.95)' : 'rgba(255,250,238,.85)';
+    ctx.beginPath(); ctx.roundRect(p.rx - tw / 2, ny - 13, tw, 18, 9); ctx.fill();
+    if (mine) { ctx.strokeStyle = '#b8862b'; ctx.lineWidth = 1.5; ctx.stroke(); }
+    ctx.fillStyle = '#3b2a1d'; ctx.fillText(p.name, p.rx, ny + 1);
+    if (weak) { ctx.font = '14px system-ui'; ctx.fillText('💤', p.rx + 28, ny - 2); }
+  }
+}
+
+function drawFx(dt) {
+  for (let i = parts.length - 1; i >= 0; i--) {
+    const q = parts[i]; q.life += dt; if (q.life > q.max) { parts.splice(i, 1); continue; }
+    q.x += q.vx * dt; q.y += q.vy * dt; q.vy += 260 * dt;
+    ctx.globalAlpha = 1 - q.life / q.max; ctx.fillStyle = q.col;
+    ctx.beginPath(); ctx.arc(q.x, q.y, q.r * (1 - q.life / q.max * .4), 0, 7); ctx.fill();
+  }
+  ctx.globalAlpha = 1;
+  for (let i = floaters.length - 1; i >= 0; i--) {
+    const f = floaters[i]; f.life += dt; if (f.life > 1.6) { floaters.splice(i, 1); continue; }
+    const a = 1 - Math.max(0, f.life - 1) / .6;
+    ctx.globalAlpha = a; ctx.textAlign = 'center';
+    ctx.font = '800 20px system-ui, sans-serif'; ctx.lineWidth = 4; ctx.strokeStyle = 'rgba(90,55,20,.8)'; ctx.fillStyle = f.col;
+    const y = f.y - f.life * 38;
+    ctx.strokeText(f.text, f.x, y); ctx.fillText(f.text, f.x, y);
+    ctx.font = '600 12px system-ui, sans-serif'; ctx.lineWidth = 3;
+    ctx.strokeText(f.sub, f.x, y + 15); ctx.fillText(f.sub, f.x, y + 15);
+  }
+  ctx.globalAlpha = 1;
+}
+
+function drawMeter(W, H) {
+  const x = W - 16, y0 = H * .28, y1 = H * .72;
+  ctx.fillStyle = 'rgba(255,250,238,.55)'; ctx.beginPath(); ctx.roundRect(x - 4, y0 - 6, 8, y1 - y0 + 12, 4); ctx.fill();
+  const span = world.ground - world.towerTop;
+  for (let t = 0; t < 8; t++) {
+    const L = t === 0 ? 0 : t * 2 - 1;
+    const f = clamp((world.ground - (world.ground - world.spacing * Math.max(L, 0))) / span, 0, 1);
+    ctx.fillStyle = 'rgba(217,164,65,' + (.25 + t * .09) + ')';
+    ctx.beginPath(); ctx.arc(x, y1 - f * (y1 - y0), 2.5 + t * .4, 0, 7); ctx.fill();
+  }
+  for (const p of players.values()) {
+    if (p.fresh) continue;
+    const f = clamp((world.ground - p.ry) / span, 0, 1);
+    ctx.fillStyle = CATS[p.color].c; ctx.strokeStyle = p.id === myId ? '#000' : 'rgba(0,0,0,.45)'; ctx.lineWidth = p.id === myId ? 2 : 1;
+    ctx.beginPath(); ctx.arc(x, y1 - f * (y1 - y0), p.id === myId ? 6 : 4.5, 0, 7); ctx.fill(); ctx.stroke();
+  }
+}
+
+/* =============================================================== HUD */
+const hFill = $('hFill'), hText = $('hText');
+let boardT = 0;
+function updateHud(dt) {
+  const me = players.get(myId); if (!me || me.fresh) return;
+  const h = me.hunger;
+  hFill.style.width = h + '%';
+  hFill.style.background = h < 50 ? '#6f8f5a' : h < 80 ? '#d9a441' : '#c0553e';
+  hText.textContent = h >= 100 ? 'PRESLAB SI! Pojedi nešto!' : 'Glad: ' + h + '%';
+  $('meP').classList.toggle('weak', h >= 100);
+  $('meScore').textContent = '⭐ ' + me.score;
+  const hm = Math.max(0, (world.ground - me.ry) / 50);
+  maxH = Math.max(maxH, hm);
+  const L = clamp(Math.round((world.ground - me.ry) / world.spacing), 0, world.levels);
+  const tier = L === 0 ? 0 : Math.min(7, Math.floor((L + 1) / 2));
+  $('meInfo').textContent = 'Visina: ' + hm.toFixed(1) + ' m (rekord ' + maxH.toFixed(1) + ' m) · Ovdje: ' + world.tiers[tier].n;
+  boardT -= dt;
+  if (boardT <= 0) {
+    boardT = .3;
+    const b = $('board'); b.textContent = '';
+    const h4 = document.createElement('h4'); h4.textContent = 'Najbolji mačkovi'; b.appendChild(h4);
+    [...players.values()].filter(p => !p.fresh).sort((a, b2) => b2.score - a.score).slice(0, 8).forEach((p) => {
+      const r = document.createElement('div'); r.className = 'r' + (p.id === myId ? ' me' : '');
+      const d = document.createElement('span'); d.className = 'dot'; d.style.background = CATS[p.color].c;
+      const n = document.createElement('span'); n.className = 'nm'; n.textContent = p.name;
+      const s = document.createElement('span'); s.className = 'sc'; s.textContent = p.score;
+      r.append(d, n, s); b.appendChild(r);
+    });
+  }
+}
+
+/* =============================================================== glavna petlja */
+function resize() {
+  dpr = Math.min(2, window.devicePixelRatio || 1);
+  canvas.width = Math.round(innerWidth * dpr); canvas.height = Math.round(innerHeight * dpr);
+}
+addEventListener('resize', resize); resize();
+
+let last = performance.now();
+function frame(now) {
+  requestAnimationFrame(frame);
+  const dt = Math.min(.05, (now - last) / 1000); last = now; time += dt;
+  if (!playing || !world) return;
+  const W = innerWidth, H = innerHeight;
+  scale = H / 760; if (W / scale < 640) scale = W / 640;
+  vw = W / scale; vh = H / scale;
+
+  // glađenje položaja svih mačaka
+  const k = 1 - Math.exp(-dt * 22);
+  for (const p of players.values()) {
+    if (p.fresh) continue;
+    const age = Math.min(.12, (now - p.got) / 1000);
+    const tx = p.x + p.vx * age, ty = p.y + (p.og ? 0 : p.vy * age);
+    if (Math.hypot(tx - p.rx, ty - p.ry) > 160) { p.rx = tx; p.ry = ty; }
+    else { p.rx += (tx - p.rx) * k; p.ry += (ty - p.ry) * k; }
+    const target = p.og && !p.stun ? clamp(Math.abs(p.vx) / 200, 0, 1) : 0;
+    p.run += (target - p.run) * Math.min(1, dt * 12);
+  }
+
+  // kamera prati mog mačka
+  const me = players.get(myId);
+  if (me && !me.fresh) {
+    const tx = me.rx - vw / 2 + me.face * 40, ty = me.ry - vh * .62;
+    if (!cam.init) { cam.x = tx; cam.y = ty; cam.init = true; }
+    const ck = 1 - Math.exp(-dt * 6);
+    cam.x += (tx - cam.x) * ck; cam.y += (ty - cam.y) * ck;
+  }
+  const minX = world.left - 40, maxX = world.right + 90;
+  cam.x = (maxX - minX <= vw) ? (minX + maxX - vw) / 2 : clamp(cam.x, minX, maxX - vw);
+  cam.y = clamp(cam.y, world.towerTop - 160, world.ground + 120 - vh);
+
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+  drawSky(W, H);
+  drawHills(W);
+  ctx.save();
+  ctx.scale(scale, scale); ctx.translate(-Math.round(cam.x * scale) / scale, -Math.round(cam.y * scale) / scale);
+  drawWorld(); drawFoods(); drawPlayers(dt); drawFx(dt);
+  ctx.restore();
+  drawMeter(W, H);
+  updateHud(dt);
+}
+requestAnimationFrame(frame);
+})();
+</script>
+</body>
+</html>
