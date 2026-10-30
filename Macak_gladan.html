@@ -439,7 +439,7 @@ function onMsg(m) {
       foodOn = world.foods.map(() => true);
       players.clear();
       m.players.forEach(addPlayer);
-      buildPatterns();
+      buildPatterns(); buildTierY();
       $('start').hidden = true; $('hud').hidden = false;
       if (matchMedia('(pointer: coarse)').matches || 'ontouchstart' in window) { $('touch').hidden = false; document.body.classList.add('touch'); }
       playing = true; cam.init = false;
@@ -491,7 +491,7 @@ function onEvent(e) {
       break;
     }
     case 'ouch': if (mine) { SND.ouch(1); toast('Au! Pao si s prevelike visine. Skoči lijevo na madrace!'); } else if (v > 0) SND.ouch(v * .6); puff(e.x, e.y, 8, 'rgba(120,90,60,.7)', 100); break;
-    case 'faint': if (mine) { SND.faint(1); toast('Pao si u nesvijest od gladi… 😵 probudio si se dolje.'); } break;
+    case 'faint': if (mine) { SND.faint(1); toast('Pao si u nesvijest od gladi… 😵 Probudio si se niže, na sigurnom.'); } break;
   }
 }
 let toastTimer = 0;
@@ -556,22 +556,36 @@ function buildPatterns() {
 /* =============================================================== crtanje svijeta */
 const CLOUDS = Array.from({ length: 18 }, (_, i) => ({ x: (i * 397) % 3200, y: 150 + ((i * 211) % 2000), s: .8 + (i % 4) * .35, sp: 4 + (i % 5) * 2 }));
 
+const STARS = Array.from({ length: 70 }, (_, i) => [((i * 7919) % 1000) / 1000, ((i * 104729) % 1000) / 1000, 1 + (i % 3) * .8]);
+
 function drawSky(W, H) {
-  const hf = clamp((world.ground - (cam.y + vh / 2)) / (world.spacing * world.levels + 300), 0, 1);
+  const span = world.ground - world.towerTop;
+  const hf = clamp((world.ground - (cam.y + vh / 2)) / span, 0, 1);       // 0 = tlo, 1 = vrh
+  const k = hf < .55 ? hf / .55 : (hf - .55) / .45;
+  const top = hf < .55 ? mix('#8fc1e3', '#4a7fb5', k) : mix('#4a7fb5', '#182848', k);
+  const bot = hf < .55 ? mix('#dcecf1', '#a6cde4', k) : mix('#a6cde4', '#4a6590', k);
   const g = ctx.createLinearGradient(0, 0, 0, H);
-  g.addColorStop(0, mix('#8fc1e3', '#4d82b8', hf));
-  g.addColorStop(1, mix('#dcecf1', '#a6cde4', hf));
+  g.addColorStop(0, top); g.addColorStop(1, bot);
   ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  // zvijezde (vide se tek visoko)
+  const sa = clamp((hf - .62) / .3, 0, 1);
+  if (sa > 0) {
+    ctx.fillStyle = 'rgba(255,255,255,' + (sa * .85) + ')';
+    for (const s of STARS) ctx.fillRect(s[0] * W, s[1] * H * .8, s[2], s[2]);
+  }
   // sunce
-  ctx.fillStyle = 'rgba(255,244,200,.55)';
+  const sunA = 1 - sa * .75;
+  ctx.fillStyle = 'rgba(255,244,200,' + (.55 * sunA) + ')';
   ctx.beginPath(); ctx.arc(W * .82, H * .2 + hf * 40, 46, 0, 7); ctx.fill();
-  ctx.fillStyle = 'rgba(255,244,200,.25)';
+  ctx.fillStyle = 'rgba(255,244,200,' + (.25 * sunA) + ')';
   ctx.beginPath(); ctx.arc(W * .82, H * .2 + hf * 40, 78, 0, 7); ctx.fill();
-  // oblaci (paralaksa)
-  ctx.fillStyle = 'rgba(255,255,255,.72)';
+  // oblaci (paralaksa, ponavljaju se po visini)
+  ctx.fillStyle = 'rgba(255,255,255,' + (.72 * (1 - sa * .7)) + ')';
   for (const c of CLOUDS) {
     const wx = ((c.x + time * c.sp) % 3400) - 300;
-    const sx = (wx - cam.x * .45) * scale, sy = (c.y - cam.y * .55) * scale;
+    let wy = c.y - cam.y * .55;
+    wy = (((wy % 2400) + 2400) % 2400) - 400;
+    const sx = (wx - cam.x * .45) * scale, sy = wy * scale;
     if (sy < -120 || sy > H + 120) continue;
     const s = c.s * scale;
     ctx.beginPath();
@@ -604,45 +618,90 @@ function drawHills(W) {
   }
 }
 
+function drawFloor(x1, x2, y, kind) {
+  const h = 22;
+  ctx.fillStyle = 'rgba(60,40,20,.16)'; ctx.fillRect(x1, y + h, x2 - x1, 10);
+  const g = ctx.createLinearGradient(0, y, 0, y + h);
+  g.addColorStop(0, kind === 'summit' ? '#dcb870' : '#c49a62'); g.addColorStop(.35, '#a87a48'); g.addColorStop(1, '#6e4528');
+  ctx.fillStyle = g; ctx.fillRect(x1, y, x2 - x1, h);
+  ctx.strokeStyle = 'rgba(60,35,15,.3)'; ctx.lineWidth = 1.2;
+  for (let x = x1 + 90; x < x2; x += 90) { ctx.beginPath(); ctx.moveTo(x, y); ctx.lineTo(x, y + h); ctx.stroke(); }
+  ctx.fillStyle = '#6e4528';
+  for (let bx = x1 + 100; bx < x2 - 60; bx += 200) { ctx.beginPath(); ctx.moveTo(bx, y + h); ctx.lineTo(bx + 34, y + h); ctx.lineTo(bx, y + h + 38); ctx.closePath(); ctx.fill(); }
+  // natpis (iza mačaka)
+  const cx = (x1 + x2) / 2, sy = y - 86;
+  ctx.fillStyle = '#7a5636'; ctx.fillRect(cx - 60, sy + 34, 5, 30); ctx.fillRect(cx + 55, sy + 34, 5, 30);
+  ctx.fillStyle = kind === 'summit' ? '#c99a3e' : '#9a6b43';
+  ctx.beginPath(); ctx.roundRect(cx - 120, sy, 240, 38, 9); ctx.fill();
+  ctx.strokeStyle = '#6f4a2c'; ctx.lineWidth = 3; ctx.stroke();
+  ctx.fillStyle = '#fff4dc'; ctx.font = '700 17px system-ui, sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+  ctx.fillText(kind === 'summit' ? '🏆 VRH — gozba te čeka!' : '🍽️ ODMORIŠTE', cx, sy + 20);
+  ctx.textBaseline = 'alphabetic';
+}
+
 function drawWorld() {
   const w = world, top = w.towerTop, G = w.ground;
+  const vy0 = cam.y - 30, vy1 = cam.y + vh + 30;                 // crtamo samo vidljivi dio tornja
+  const wy0 = Math.max(top, vy0), wy1 = Math.min(G, vy1);
   // trava i zemlja
-  ctx.fillStyle = '#6b5640'; ctx.fillRect(w.left - 200, G, (w.right - w.left) + 600, 500);
-  ctx.fillStyle = '#7fa05f'; ctx.fillRect(w.left - 200, G - 2, (w.right - w.left) + 600, 16);
-  ctx.fillStyle = '#6f8f50';
-  for (let x = w.left; x < w.right + 80; x += 38) ctx.fillRect(x, G - 7, 14, 9);
+  if (vy1 > G - 20) {
+    ctx.fillStyle = '#6b5640'; ctx.fillRect(w.left - 200, G, (w.right - w.left) + 600, 500);
+    ctx.fillStyle = '#7fa05f'; ctx.fillRect(w.left - 200, G - 2, (w.right - w.left) + 600, 16);
+    ctx.fillStyle = '#6f8f50';
+    for (let x = w.left; x < w.right + 80; x += 38) ctx.fillRect(x, G - 7, 14, 9);
+  }
 
   // pozadinski zid tornja
-  ctx.save();
-  ctx.fillStyle = wallPat; ctx.fillRect(0, top, w.right, G - top);
-  const sh = ctx.createLinearGradient(0, 0, 60, 0); sh.addColorStop(0, 'rgba(60,40,20,.28)'); sh.addColorStop(1, 'rgba(60,40,20,0)');
-  ctx.fillStyle = sh; ctx.fillRect(0, top, 60, G - top);
-  ctx.restore();
+  if (wy1 > wy0) {
+    ctx.fillStyle = wallPat; ctx.fillRect(0, wy0, w.right, wy1 - wy0);
+    const sh = ctx.createLinearGradient(0, 0, 60, 0); sh.addColorStop(0, 'rgba(60,40,20,.28)'); sh.addColorStop(1, 'rgba(60,40,20,0)');
+    ctx.fillStyle = sh; ctx.fillRect(0, wy0, 60, wy1 - wy0);
+  }
   // prozori
-  for (let L = 1; L < w.levels; L += 2) {
-    const wx = 120 + ((L * 263) % 700), wy = G - w.spacing * L - 112;
+  for (let L = 2; L < w.levels; L += 3) {
+    const wy = w.levelY[L] - 112;
+    if (wy < vy0 - 70 || wy > vy1) continue;
+    const wx = 120 + ((L * 263) % 700);
     ctx.fillStyle = '#7a5636'; ctx.fillRect(wx - 5, wy - 5, 70, 70);
     const gl = ctx.createLinearGradient(0, wy, 0, wy + 60); gl.addColorStop(0, '#c7e0ee'); gl.addColorStop(1, '#9cc3d8');
     ctx.fillStyle = gl; ctx.fillRect(wx, wy, 60, 60);
     ctx.fillStyle = '#7a5636'; ctx.fillRect(wx + 28, wy, 4, 60); ctx.fillRect(wx, wy + 28, 60, 4);
   }
+  // oznake visine na zidu
+  ctx.font = '700 20px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'alphabetic';
+  ctx.fillStyle = 'rgba(90,60,30,.38)';
+  for (let L = 10; L <= w.levels; L += 10) {
+    const y = w.levelY[L];
+    if (y < vy0 || y > vy1 + 40) continue;
+    ctx.fillText(Math.round((G - y) / 50) + ' m', 14, y - 40);
+  }
   // znak prema madracima
-  const sx = 24, sy = G - 215;
-  ctx.fillStyle = '#7a5636'; ctx.fillRect(sx + 20, sy + 34, 8, 40);
-  ctx.fillStyle = '#9a6b43'; ctx.beginPath(); ctx.roundRect(sx - 8, sy, 170, 40, 8); ctx.fill();
-  ctx.strokeStyle = '#6f4a2c'; ctx.lineWidth = 3; ctx.stroke();
-  ctx.fillStyle = '#fff4dc'; ctx.font = '700 18px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
-  ctx.fillText('◀ MADRACI', sx + 8, sy + 21);
+  if (vy1 > G - 260) {
+    const sx = 24, sy = G - 215;
+    ctx.fillStyle = '#7a5636'; ctx.fillRect(sx + 20, sy + 34, 8, 40);
+    ctx.fillStyle = '#9a6b43'; ctx.beginPath(); ctx.roundRect(sx - 8, sy, 170, 40, 8); ctx.fill();
+    ctx.strokeStyle = '#6f4a2c'; ctx.lineWidth = 3; ctx.stroke();
+    ctx.fillStyle = '#fff4dc'; ctx.font = '700 18px system-ui, sans-serif'; ctx.textAlign = 'left'; ctx.textBaseline = 'middle';
+    ctx.fillText('◀ MADRACI', sx + 8, sy + 21);
+    ctx.textBaseline = 'alphabetic';
+  }
 
   // desni zid (cigle) i krov
-  ctx.fillStyle = brickPat; ctx.fillRect(w.right, top - 24, 90, G - top + 24);
-  ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(w.right, top - 24, 6, G - top + 24);
-  ctx.fillStyle = '#6b4a2f'; ctx.fillRect(-26, top - 26, w.right + 130, 26);
-  ctx.fillStyle = '#85603f'; ctx.fillRect(-26, top - 26, w.right + 130, 6);
+  const by0 = Math.max(top - 24, vy0);
+  if (wy1 > by0) {
+    ctx.fillStyle = brickPat; ctx.fillRect(w.right, by0, 90, wy1 - by0);
+    ctx.fillStyle = 'rgba(0,0,0,.18)'; ctx.fillRect(w.right, by0, 6, wy1 - by0);
+  }
+  if (vy0 < top) {
+    ctx.fillStyle = '#6b4a2f'; ctx.fillRect(-26, top - 26, w.right + 130, 26);
+    ctx.fillStyle = '#85603f'; ctx.fillRect(-26, top - 26, w.right + 130, 6);
+  }
 
-  // police
+  // police, odmorišta i vrh
   for (const [x1, x2, y, kind] of w.platforms) {
-    if (kind !== 'shelf') continue;
+    if (kind !== 'shelf' && kind !== 'rest' && kind !== 'summit') continue;
+    if (y < vy0 - 20 || y > vy1 + 20) continue;
+    if (kind !== 'shelf') { drawFloor(x1, x2, y, kind); continue; }
     ctx.fillStyle = 'rgba(60,40,20,.14)'; ctx.fillRect(x1, y + 16, x2 - x1, 9);
     const g = ctx.createLinearGradient(0, y, 0, y + 16);
     g.addColorStop(0, '#b88556'); g.addColorStop(.3, '#9a6b43'); g.addColorStop(1, '#73492b');
@@ -654,14 +713,16 @@ function drawWorld() {
   }
 
   // madraci
-  const M = w.mattress, cols = ['#b4c4a2', '#dfcfaa', '#a9bcc8'];
-  for (let i = 2; i >= 0; i--) {
-    const y = M.top + i * 12;
-    ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.roundRect(M.x1, y, M.x2 - M.x1, 13, 6); ctx.fill();
-    ctx.strokeStyle = 'rgba(70,50,30,.35)'; ctx.lineWidth = 1.4; ctx.stroke();
-    ctx.strokeStyle = 'rgba(70,50,30,.22)'; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(M.x1 + 8, y + 6.5); ctx.lineTo(M.x2 - 8, y + 6.5); ctx.stroke(); ctx.setLineDash([]);
-    ctx.fillStyle = 'rgba(70,50,30,.28)';
-    for (let x = M.x1 + 40; x < M.x2 - 20; x += 70) { ctx.beginPath(); ctx.arc(x, y + 6.5, 2, 0, 7); ctx.fill(); }
+  if (vy1 > G - 120) {
+    const M = w.mattress, cols = ['#b4c4a2', '#dfcfaa', '#a9bcc8'];
+    for (let i = 2; i >= 0; i--) {
+      const y = M.top + i * 12;
+      ctx.fillStyle = cols[i]; ctx.beginPath(); ctx.roundRect(M.x1, y, M.x2 - M.x1, 13, 6); ctx.fill();
+      ctx.strokeStyle = 'rgba(70,50,30,.35)'; ctx.lineWidth = 1.4; ctx.stroke();
+      ctx.strokeStyle = 'rgba(70,50,30,.22)'; ctx.setLineDash([6, 5]); ctx.beginPath(); ctx.moveTo(M.x1 + 8, y + 6.5); ctx.lineTo(M.x2 - 8, y + 6.5); ctx.stroke(); ctx.setLineDash([]);
+      ctx.fillStyle = 'rgba(70,50,30,.28)';
+      for (let x = M.x1 + 40; x < M.x2 - 20; x += 70) { ctx.beginPath(); ctx.arc(x, y + 6.5, 2, 0, 7); ctx.fill(); }
+    }
   }
 }
 
@@ -733,21 +794,33 @@ function drawFx(dt) {
   ctx.globalAlpha = 1;
 }
 
+let tierY = [];
+function buildTierY() {
+  tierY = [];
+  for (let L = 0; L <= world.levels; L++) { const t = world.tierOf[L]; if (tierY[t] === undefined) tierY[t] = world.levelY[L]; }
+}
+// na kojem je katu mačak (najviši kat čija je polica na razini njegovih nogu ili ispod)
+function levelAt(y) {
+  let L = 0; const ly = world.levelY;
+  while (L < world.levels && ly[L + 1] >= y - 20) L++;
+  return L;
+}
+
 function drawMeter(W, H) {
   const x = W - 16, y0 = H * .28, y1 = H * .72;
   ctx.fillStyle = 'rgba(255,250,238,.55)'; ctx.beginPath(); ctx.roundRect(x - 4, y0 - 6, 8, y1 - y0 + 12, 4); ctx.fill();
   const span = world.ground - world.towerTop;
-  for (let t = 0; t < 8; t++) {
-    const L = t === 0 ? 0 : t * 2 - 1;
-    const f = clamp((world.ground - (world.ground - world.spacing * Math.max(L, 0))) / span, 0, 1);
+  const pos = (y) => y1 - clamp((world.ground - y) / span, 0, 1) * (y1 - y0);
+  for (let t = 0; t < tierY.length; t++) {
     ctx.fillStyle = 'rgba(217,164,65,' + (.25 + t * .09) + ')';
-    ctx.beginPath(); ctx.arc(x, y1 - f * (y1 - y0), 2.5 + t * .4, 0, 7); ctx.fill();
+    ctx.beginPath(); ctx.arc(x, pos(tierY[t]), 2.5 + t * .4, 0, 7); ctx.fill();
   }
+  ctx.fillStyle = 'rgba(111,143,90,.95)';
+  for (const [, , y, kind] of world.platforms) if (kind === 'rest' || kind === 'summit') ctx.fillRect(x - 7, pos(y) - 1, 14, 2.5);
   for (const p of players.values()) {
     if (p.fresh) continue;
-    const f = clamp((world.ground - p.ry) / span, 0, 1);
     ctx.fillStyle = CATS[p.color].c; ctx.strokeStyle = p.id === myId ? '#000' : 'rgba(0,0,0,.45)'; ctx.lineWidth = p.id === myId ? 2 : 1;
-    ctx.beginPath(); ctx.arc(x, y1 - f * (y1 - y0), p.id === myId ? 6 : 4.5, 0, 7); ctx.fill(); ctx.stroke();
+    ctx.beginPath(); ctx.arc(x, pos(p.ry), p.id === myId ? 6 : 4.5, 0, 7); ctx.fill(); ctx.stroke();
   }
 }
 
@@ -764,9 +837,9 @@ function updateHud(dt) {
   $('meScore').textContent = '⭐ ' + me.score;
   const hm = Math.max(0, (world.ground - me.ry) / 50);
   maxH = Math.max(maxH, hm);
-  const L = clamp(Math.round((world.ground - me.ry) / world.spacing), 0, world.levels);
-  const tier = L === 0 ? 0 : Math.min(7, Math.floor((L + 1) / 2));
-  $('meInfo').textContent = 'Visina: ' + hm.toFixed(1) + ' m (rekord ' + maxH.toFixed(1) + ' m) · Ovdje: ' + world.tiers[tier].n;
+  const L = levelAt(me.ry);
+  const tier = world.tierOf[L];
+  $('meInfo').textContent = 'Visina: ' + hm.toFixed(1) + ' m (rekord ' + maxH.toFixed(1) + ' m) · Kat ' + L + '/' + world.levels + ' · Ovdje: ' + world.tiers[tier].n;
   boardT -= dt;
   if (boardT <= 0) {
     boardT = .3;
@@ -815,7 +888,7 @@ function frame(now) {
   if (me && !me.fresh) {
     const tx = me.rx - vw / 2 + me.face * 40, ty = me.ry - vh * .62;
     if (!cam.init) { cam.x = tx; cam.y = ty; cam.init = true; }
-    const ck = 1 - Math.exp(-dt * 6);
+    const ck = 1 - Math.exp(-dt * (6 + Math.min(10, Math.abs(me.vy) / 120)));  // brže prati kad mačak pada
     cam.x += (tx - cam.x) * ck; cam.y += (ty - cam.y) * ck;
   }
   const minX = world.left - 40, maxX = world.right + 90;

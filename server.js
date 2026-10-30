@@ -12,27 +12,38 @@ const { WebSocketServer } = require('ws');
 const PORT = process.env.PORT || 3000;
 const PUBLIC_DIR = path.join(__dirname, 'public');
 
+// ---------------------------------------------------------------- postavke (slobodno mijenjaj)
+const LEVELS = 80;              // broj katova tornja (prije ih je bilo 14)
+const HUNGER_RATE = 0.3;        // koliko % gladi naraste u sekundi (prije 1.3, dakle ~4x sporije)
+const REST_EVERY = 20;          // svakih toliko katova je široko "odmorište" s hranom (0 = isključeno)
+const SPACING_MIN = 124;        // razmak među katovima pri dnu ...
+const SPACING_MAX = 146;        // ... i pri vrhu (maks. visina skoka je ≈168 px, pa je pri vrhu sve zahtjevnije)
+const LEFT_LEDGES_UNTIL = 10;   // do ovog kata uvijek ima police uz lijevi rub (lagan bijeg na madrace)
+
 // ---------------------------------------------------------------- svijet
+const spacingOf = (L) => SPACING_MIN + (SPACING_MAX - SPACING_MIN) * ((L - 1) / Math.max(1, LEVELS - 1));
+let totalHeight = 0;
+for (let L = 1; L <= LEVELS; L++) totalHeight += spacingOf(L);
 const W = {
   left: -620,
   right: 1000,
-  ground: 2300,
-  levels: 14,
-  spacing: 130,
+  levels: LEVELS,
+  towerTop: 300, // krov tornja
   mattress: { x1: -560, x2: -30, h: 36 },
 };
-W.towerTop = W.ground - W.spacing * (W.levels + 1); // krov tornja
+W.ground = Math.round(W.towerTop + 200 + totalHeight);
+W.levelY = [W.ground]; // y svakog kata; 0. kat je tlo
+for (let L = 1; L <= LEVELS; L++) W.levelY[L] = Math.round(W.levelY[L - 1] - spacingOf(L));
 const PW = 42; // širina mačka (kutija za sudare)
 const PH = 30; // visina mačka
-W.ceiling = W.towerTop + PH + 4;
+W.ceiling = W.towerTop + 48;
 
 const TICK = 60;
 const DT = 1 / TICK;
 const GRAVITY = 2000;
 const MAX_FALL = 1400;
 const SPEED = 270;
-const JUMP = 820; // maks. visina skoka ≈ 168 px, razmak polica je 130 px
-const HUNGER_RATE = 1.3; // % u sekundi
+const JUMP = 820; // maks. visina skoka ≈ 168 px
 const HARD_LANDING = 1150; // brzina pada nakon koje te "zaboli" (osim na madracima)
 const CAT_COUNT = 9;
 const MAX_PLAYERS = 16;
@@ -48,18 +59,18 @@ const TIERS = [
   { n: 'Pačja prsa', r: 46, p: 115 },
   { n: 'Kraljevski škampi', r: 52, p: 150 },
 ];
-const levelTier = (L) => (L === 0 ? 0 : Math.min(7, Math.floor((L + 1) / 2)));
+// 8 razina hrane ravnomjerno raspoređenih po katovima (što viši kat, to bolja hrana)
+const levelTier = (L) => (L <= 0 ? 0 : Math.min(TIERS.length - 1, Math.floor(((L - 1) * TIERS.length) / LEVELS)));
 
-// Raspored polica po katovima (ponavlja se). Sve počinju od lijevog ruba (x=0) ili
-// su blizu njega, a lijevi rub je otvoren — tamo se može "skočiti" na madrace.
-const PATTERNS = [
-  [[0, 400], [520, 1000]],
-  [[0, 250], [370, 760], [880, 1000]],
-  [[0, 330], [450, 700], [820, 1000]],
-];
+// Koliko se daleko (vodoravno) može doskočiti na platformu koja je dy px iznad one s koje se skače.
+function jumpReach(dy) {
+  const disc = JUMP * JUMP - 2 * GRAVITY * dy;
+  return disc <= 0 ? 0 : (SPEED * (JUMP + Math.sqrt(disc))) / GRAVITY;
+}
 
 const rnd = (a, b) => a + Math.random() * (b - a);
 const r1 = (v) => Math.round(v);
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 
 // ---------------------------------------------------------------- soba
 class Room {
@@ -73,41 +84,102 @@ class Room {
     this.build();
   }
 
+  // Toranj se gradi odozdo prema gore. Uvijek postoji "glavna staza": jedna platforma po katu do koje se
+  // sigurno može doskočiti s prethodne. Što je kat viši, to je platformi manje, uže su, a razmaci veći.
   build() {
+    const lerp = (a, b, t) => a + (b - a) * t;
+    const gap = (a, b) => Math.max(0, Math.max(a.x1, b.x1) - Math.min(a.x2, b.x2)); // vodoravni razmak (0 = preklapaju se)
+    const X0 = 0;
+    const X1 = W.right;
     this.platforms = [
-      { x1: W.left, x2: W.right, y: W.ground, kind: 'ground' },
+      { x1: W.left, x2: W.right, y: W.ground, kind: 'ground', safe: true },
       { x1: W.mattress.x1, x2: W.mattress.x2, y: W.ground - W.mattress.h, kind: 'mattress' },
     ];
-    const byLevel = [];
-    for (let L = 1; L <= W.levels; L++) {
-      const y = W.ground - W.spacing * L;
-      byLevel[L] = [];
-      for (const [x1, x2] of PATTERNS[(L - 1) % PATTERNS.length]) {
-        const s = { x1, x2, y, kind: 'shelf', level: L };
+    const levels = [[{ x1: X0, x2: X1 }]]; // levels[L] = platforme na katu L (0 = tlo)
+    let main = levels[0][0];
+    for (let L = 1; L <= LEVELS; L++) {
+      const y = W.levelY[L];
+      const dy = W.levelY[L - 1] - y;
+      const d = (L - 1) / Math.max(1, LEVELS - 1); // težina: 0 (dolje) … 1 (vrh)
+      const limit = jumpReach(dy) * lerp(0.28, 0.76, Math.pow(d, 0.9)); // najveći dopušteni razmak
+      const isTop = L === LEVELS;
+      const isRest = isTop || (REST_EVERY > 0 && L % REST_EVERY === 0);
+      const list = [];
+      const add = (x1, x2, kind) => {
+        const s = { x1: Math.round(x1), x2: Math.round(x2), y, kind, level: L, safe: kind !== 'shelf' };
+        list.push(s);
         this.platforms.push(s);
-        byLevel[L].push(s);
+        return s;
+      };
+      const reachable = (c) => levels[L - 1].some((b) => gap(b, c) <= limit);
+
+      if (isRest) {
+        main = add(X0, X1, isTop ? 'summit' : 'rest');
+      } else {
+        const w = lerp(380, 120, Math.pow(d, 0.85)) * rnd(0.85, 1.15);
+        const g = limit * rnd(0.55, 1);
+        const prevW = main.x2 - main.x1;
+        const canR = main.x2 + g + w <= X1;
+        const canL = main.x1 - g - w >= X0;
+        let x1;
+        if (prevW > 900 || (!canR && !canL) || Math.random() < Math.max(0, 0.6 - d * 1.2)) {
+          // iznad prethodne (preklapaju se) ili bilo gdje ako je ispod cijeli pod
+          const lo = prevW > 900 ? X0 : Math.max(X0, main.x1 - w + 50);
+          const hi = prevW > 900 ? X1 - w : Math.min(X1 - w, main.x2 - 50);
+          x1 = lo <= hi ? rnd(lo, hi) : clamp(main.x1, X0, X1 - w);
+        } else if (canR && (!canL || Math.random() < (X1 - main.x2) / (X1 - main.x2 + main.x1))) {
+          x1 = main.x2 + g; // desno od prethodne, preko praznine
+        } else {
+          x1 = main.x1 - g - w; // lijevo od prethodne
+        }
+        main = add(x1, x1 + w, 'shelf');
       }
+
+      // dodatne platforme: što je kat viši, to ih je manje (pri vrhu samo glavna)
+      const expect = isRest ? 1 : lerp(3.0, 1.0, Math.pow(d, 0.75));
+      const n = Math.floor(expect) + (Math.random() < expect - Math.floor(expect) ? 1 : 0);
+      for (let tries = 0; list.length < n && tries < 25; tries++) {
+        const we = lerp(300, 110, d) * rnd(0.8, 1.2);
+        const x1 = rnd(X0, X1 - we);
+        const c = { x1, x2: x1 + we };
+        if (list.some((s) => gap(s, c) < 70)) continue; // ne preblizu drugima
+        if (!reachable(c)) continue; // mora se moći doskočiti odozdo
+        add(c.x1, c.x2, 'shelf');
+      }
+      // pri dnu uvijek ima police uz lijevi rub – lagan "bijeg" na madrace
+      if (!isRest && L <= LEFT_LEDGES_UNTIL) {
+        const first = list.reduce((m, s) => Math.min(m, s.x1), Infinity);
+        const wl = Math.min(rnd(200, 360), first - 70);
+        if (wl >= 150 && reachable({ x1: 0, x2: wl })) add(0, wl, 'shelf');
+      }
+      levels[L] = list;
     }
+
+    // hrana: što je kat viši, to je bolja (levelTier)
     this.foods = [];
     let id = 0;
-    for (const x of [220, 500, 780]) {
-      this.foods.push({ id: id++, x, y: W.ground - 18, tier: 0, active: true, respawn: 0 });
-    }
-    for (let L = 1; L <= W.levels; L++) {
-      const shelves = byLevel[L].slice().sort(() => Math.random() - 0.5).slice(0, 2);
-      for (const s of shelves) {
-        this.foods.push({
-          id: id++, x: rnd(s.x1 + 34, s.x2 - 34), y: s.y - 18,
-          tier: levelTier(L), active: true, respawn: 0,
-        });
+    const addFood = (x, py, tier) => this.foods.push({ id: id++, x: Math.round(x), y: Math.round(py) - 18, tier, active: true, respawn: 0 });
+    for (const x of [220, 500, 780]) addFood(x, W.ground, 0);
+    for (let L = 1; L <= LEVELS; L++) {
+      const list = levels[L];
+      const tier = levelTier(L);
+      const d = (L - 1) / Math.max(1, LEVELS - 1);
+      if (list[0].kind !== 'shelf') {
+        for (const x of [200, 500, 800]) addFood(x, list[0].y, tier); // odmorište / vrh: gozba
+        continue;
       }
+      if (Math.random() >= lerp(0.9, 0.35, d)) continue;
+      let r = Math.random() * list.reduce((s, p) => s + (p.x2 - p.x1), 0); // šire platforme imaju veću šansu
+      const s = list.find((p) => (r -= p.x2 - p.x1) <= 0) || list[0];
+      addFood(rnd(s.x1 + 34, s.x2 - 34), s.y, tier);
     }
   }
 
   worldInfo() {
     return {
-      left: W.left, right: W.right, ground: W.ground, levels: W.levels, spacing: W.spacing,
-      towerTop: W.towerTop, pw: PW, ph: PH,
+      left: W.left, right: W.right, ground: W.ground, levels: W.levels, towerTop: W.towerTop, pw: PW, ph: PH,
+      levelY: W.levelY,
+      tierOf: W.levelY.map((_, L) => levelTier(L)),
       platforms: this.platforms.map((p) => [p.x1, p.x2, p.y, p.kind]),
       mattress: { x1: W.mattress.x1, x2: W.mattress.x2, top: W.ground - W.mattress.h },
       foods: this.foods.map((f) => [f.id, r1(f.x), r1(f.y), f.tier]),
@@ -115,9 +187,9 @@ class Room {
     };
   }
 
-  spawn(p) {
+  spawn(p, plat) {
     p.x = rnd(60, 940);
-    p.y = W.ground;
+    p.y = plat ? plat.y : W.ground;
     p.vx = 0;
     p.vy = 0;
     p.og = true;
@@ -242,7 +314,12 @@ class Room {
   }
 
   faint(p) {
-    this.spawn(p);
+    // probudi se na najbližem odmorištu ispod sebe (ili na tlu)
+    let best = null;
+    for (const pl of this.platforms) {
+      if (pl.safe && pl.y >= p.y - 2 && (!best || pl.y < best.y)) best = pl;
+    }
+    this.spawn(p, best);
     p.hunger = 55;
     p.starve = 0;
     p.stun = 1.2;
@@ -430,4 +507,4 @@ if (require.main === module) {
   server.listen(PORT, () => console.log('Gladni mačak radi na http://localhost:' + PORT));
 }
 
-module.exports = { Room, W, TIERS, PW, PH, DT, levelTier };
+module.exports = { Room, W, TIERS, PW, PH, DT, levelTier, jumpReach, spacingOf, LEVELS, server, loop };
